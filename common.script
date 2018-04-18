@@ -1,0 +1,383 @@
+######Script######
+########################################
+1.计算每条序列长度
+
+#!/usr/bin/perl
+use warnings;
+use strict;
+my (@arr, $changdu, %hash, $key);
+open (FELI, "$ARGV[0]");
+
+
+while(<FELI>){
+                     chomp;
+                                     if (/^>/){
+                                                            $key=$_;
+                                     }
+
+                                                     $hash{$key}.=$_ unless /^>/;
+}
+
+foreach (keys %hash){
+                      $changdu=length($hash{$_});
+                                        print "$_\t$changdu\t$hash{$_}\n";
+
+}
+
+########################################
+2.将fastqc结果合并表格
+
+opendir (DIR, "./") or die "can't open the directory!";
+@dir = readdir DIR;
+foreach $file ( sort  @dir)
+{
+    next unless -d $file;
+    next if $file eq '.';
+    next if $file eq '..';
+#$file_name=()[];
+#print "$file\n";
+    $total_reads=  `grep '^Total' ./$file/fastqc_data.txt`;
+#print $total_reads;
+    $total_reads=(split(/\s+/,$total_reads))[2];
+    $GC= `grep '%GC' ./$file/fastqc_data.txt`;
+    $GC=(split(/\s+/,$GC))[1];
+    chomp $GC;
+    open FH , "<./$file/fastqc_data.txt";
+    while (<FH>)
+          {
+                  next unless /#Quality/;
+                      while (<FH>)
+                                {
+                                            @F=split;
+                                                    $hash{$F[0]}=$F[1];
+                                                            last if />>END_MODULE/;
+                                                                    }
+                          }
+    $all=0;$Q20=0;$Q30=0;
+    $all+=$hash{$_} foreach keys %hash;
+    $Q20+=$hash{$_} foreach 0..20;
+    $Q30+=$hash{$_} foreach 0..30;
+    $Q20=1-$Q20/$all;
+    $Q30=1-$Q30/$all;
+    print "$file\t$total_reads\t$GC\t$Q20\t$Q30\n";
+#print "$all\n";
+
+}
+
+########################################
+3.计算文件中每条序列的GC Strenches (G/C大于3以上的定义为GC Strench)
+
+#! /bin/bash
+for j in `cat name.txt`
+
+do
+
+echo $j >tmp.txt
+
+extract_fasta.pl $1 tmp.txt tmp.fa
+
+my_love=$(grep -E '[C|G]+*[C|G]+*' tmp.fa -o)
+
+count=0
+
+i=0
+
+for love in $my_love
+
+do
+
+if [ `echo $love | wc -L` -ge 3 ]
+
+then
+
+len=`echo $love | wc -L`
+
+count=`expr $count + $len`
+
+i=`expr $i + 1`
+
+fi
+
+done
+
+num=`awk 'BEGIN{printf "%.2f\n",'$count'/'$i'}'`
+
+echo $j,$num >>stat.txt
+
+rm -rf tmp.txt tmp.fa
+
+done
+
+########################################
+4.计算文件中整体的GC含量
+
+#!/usr/bin/perl
+
+
+my ($name)=@ARGV;
+open(DATA,$name)||die $!;
+@seq=<DATA>;
+close DATA;
+foreach(@seq)
+                 {
+                              $L=length($_);
+                                       s/a//gi;
+                                                $L1=length($_);
+                                                         $LA=$L-$L1;
+                                                                  s/t//gi;
+                                                                           $L2=length($_);
+                                                                                    $LT=$L1-$L2;
+                                                                                             s/c//gi;
+                                                                                                      $L3=length($_);
+                                                                                                               $LC=$L2-$L3;
+                                                                                                                        s/g//gi;
+                                                                                                                                 $L4=length($_);
+                                                                                                                                          $LG=$L3-$L4;
+                                                                                                                                                   $A+=$LA;
+                                                                                                                                                            $T+=$LT;
+                                                                                                                                                                     $C+=$LC;
+                                                                                                                                                                              $G+=$LG;
+                                                                                                                                                                                       }
+$GC=($G+$C)/($A+$T+$C+$G)*100;
+print "$GC\%\n";
+
+########################################
+5.对fasta文件中序列进行排列命名
+
+#!/usr/bin/perl
+use strict;
+my $num = 1;
+while (<>) {
+if (/^>/) {
+print ">contig$num\n";
+$num += 1;
+}else {
+print $_;
+}
+}
+
+########################################
+6.将双端文件配对的和不配对的reads分离
+
+#!/usr/bin/python
+"""Resynchronize 2 fastq or fastq.gz files (R1 and R2) after they have been
+trimmed and cleaned
+WARNING! This program assumes that the fastq file uses EXACTLY four lines per
+    sequence
+    Three output files are generated. The first two files contain the reads of the
+        pairs that match and the third contains the solitary reads.
+        Usage:
+            python fastqCombinePairedEnd.py input1 input2 separator
+            input1 = LEFT  fastq or fastq.gz file (R1)
+        input2 = RIGHT fastq or fastq.gz file (R2)
+        separator = character that separates the name of the read from the part that
+            describes if it goes on the left or right, usually with characters '1' or
+                '2'.  The separator is often a space, but could be another character. A
+                    space is used by default. If the sequence names do not contain two parts
+                        and you want to use the full name info to pair your sequences, use 'None'
+                            (as text) for the separator. Eg:
+                                    python fastqCombinePairedEnd.py input1 input2 None
+                                    """
+
+# Importing module
+import gzip
+import sys
+
+# Parsing user input
+try:
+    in1 = sys.argv[1]
+    in2 = sys.argv[2]
+except:
+    print(__doc__)
+    sys.exit(1)
+try:
+    separator = sys.argv[3]
+    if separator == "None":
+        separator = None
+except:
+            separator = " "
+
+                            # Defining classes
+class Fastq(object):
+    """Fastq object with name and sequence
+    """
+
+    def __init__(self, name, seq, name2, qual):
+        self.name = name
+        self.seq = seq
+        self.name2 = name2
+        self.qual = qual
+    def getShortname(self, separator):
+        if separator:
+            self.temp = self.name.split(separator)
+            del(self.temp[-1])
+            return separator.join(self.temp)
+        else:
+            return self.name
+    def write_to_file(self, handle):
+        handle.write(self.name + "\n")
+        handle.write(self.seq + "\n")
+        handle.write(self.name2 + "\n")
+        handle.write(self.qual + "\n")
+
+                                                                                                                        # Defining functions
+def myopen(infile, mode="r"):
+    if infile.endswith(".gz"):
+        return gzip.open(infile, mode=mode)
+    else:
+        return open(infile, mode=mode)
+
+def fastq_parser(infile):
+    """Takes a fastq file infile and returns a fastq object iterator
+    """
+
+    with myopen(infile) as f:
+        while True:
+            name = f.readline().strip()
+            if not name:
+                break
+
+            seq = f.readline().strip()
+            name2 = f.readline().strip()
+            qual = f.readline().strip()
+            yield Fastq(name, seq, name2, qual)
+
+        # Main
+if __name__ == "__main__":
+    seq1_dict = {}
+    seq2_dict = {}
+    seq1 = fastq_parser(in1)
+    seq2 = fastq_parser(in2)
+    s1_finished = False
+    s2_finished = False
+
+    if in1.endswith('.gz'):
+        outSuffix='.fastq.gz'
+    else:
+        outSuffix='.fastq'
+
+    with myopen(in1 + "_pairs_R1" + outSuffix, "w") as out1:
+        with myopen(in2 + "_pairs_R2" + outSuffix, "w") as out2:
+            with myopen(in1 + "_singles" + outSuffix, "w") as out3:
+                while not (s1_finished and s2_finished):
+                    try:
+                        s1 = seq1.next()
+                    except:
+                        s1_finished = True
+                    try:
+                        s2 = seq2.next()
+                    except:
+                        s2_finished = True
+                                                                                                                                                                                                      # Add new sequences to hashes
+                    if not s1_finished:
+                        seq1_dict[s1.getShortname(separator)] = s1
+                    if not s2_finished:
+                        seq2_dict[s2.getShortname(separator)] = s2
+                    if not s1_finished and s1.getShortname(separator) in seq2_dict:
+                        seq1_dict[s1.getShortname(separator)].write_to_file(out1)
+                        seq1_dict.pop(s1.getShortname(separator))
+                        seq2_dict[s1.getShortname(separator)].write_to_file(out2)
+                        seq2_dict.pop(s1.getShortname(separator))
+                    if not s2_finished and s2.getShortname(separator) in seq1_dict:
+                        seq2_dict[s2.getShortname(separator)].write_to_file(out2)
+                        seq2_dict.pop(s2.getShortname(separator))
+                        seq1_dict[s2.getShortname(separator)].write_to_file(out1)
+                        seq1_dict.pop(s2.getShortname(separator))
+
+                        # Treat all unpaired reads
+                for r in seq1_dict.values():
+                    r.write_to_file(out3)
+
+                for r in seq2_dict.values():
+                    r.write_to_file(out3)
+
+########################################
+7.将具有多双端表达量文件合并在一起
+
+#!/bin/bash
+
+##将该组织所有表达量文件放在一个文件夹里
+
+#更改每个组织表达量文件中的名字并整合为一个总表达量文件
+
+for i in `cat a.txt`
+
+do
+
+sed -i "s/TPM/${i}/" ${i}.txt
+
+cat ${i}.txt|awk '{print $4}' >${i}.tpm
+
+done
+
+cat brain.txt|awk '{print $1}' >name.txt
+
+paste *.tpm >all.tpm
+
+paste name.txt all.tpm >all.txt
+
+
+#!/bin/bash
+
+for i in `cat name.txt`
+
+do
+
+mv ${i}/quant.sf ${i}/${i}.txt
+
+cp ${i}/${i}.txt all
+
+done
+
+
+
+
+#!/bin/bash
+
+for i in `cat a.txt`
+
+do
+
+sed -i "s/NumReads/${i}/" ${i}.txt
+
+cat ${i}.txt|awk '{print $5}' >${i}.tpm
+
+done
+
+
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
+########################################
