@@ -1,0 +1,53 @@
+#!/bin/bash
+
+for i in `cat name.txt`
+
+do
+
+echo ---------------${i}---------------
+
+
+#align reads back reference fasta >>>>.sam
+
+echo ---------------${i}---------------
+
+hisat2 -p 6 -x index -1 ${i}_1.fastq_pairs_R1.fastq -2 ${i}_2.fastq_pairs_R2.fastq -U ${i}_1.fastq_singles.fastq -S ${i}.sam
+
+#echo ---------------${i}---------------
+#hisat2 -p 8 -x index -1 ${i}_1.fastq_pairs_R1.fastq -2 ${i}_2.fastq_pairs_R2.fastq -U ${i}_1.fastq_singles.fastq -S ${i}.sam
+
+#sam >>>>bam
+
+samtools view -bS ${i}.sam > ${i}.bam
+
+
+#sort bam >>>>_sort.bam
+
+samtools sort -l 9 -m 2G -o ${i}_sort.bam -@ 6 ${i}.bam
+
+#build index for _sort.bam
+
+samtools index ${i}_sort.bam
+
+#first step call snp >>>>>>>>.bcf
+
+samtools mpileup -gSDf duck.fa ${i}_sort.bam >${i}.bcf
+
+#second step call snp >>>>>>>.vcf
+
+bcftools call -mv -Oz ${i}.bcf >${i}.vcf
+
+#quilty filter for .vcf
+
+#bcftools filter -i'%QUAL>20' ${i}.vcf > ${i}_filter.vcf
+
+#sata snp and indel
+
+#bcftools stats ${i}_filter.vcf
+
+
+
+
+
+
+done

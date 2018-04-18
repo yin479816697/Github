@@ -1,0 +1,154 @@
+######Linux ######
+Transcript De novo assembly and analysis
+########################################
+1.Reads quality control
+
+fastqc处理，用fastqc_stats.pl进行结果统计，与项目报告中的要求一致
+########################################
+2.Convert sra to fastq
+
+#!/bin/bash
+for id in SRR*
+do
+echo $id
+fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-3 $id
+done
+
+#若转换出现错误，fasta的header name出现了问题，删除header name 字符串
+sed -i s/_forward// .fastq
+########################################
+3.Filter data by length
+
+#!/bin/bash
+for PE in *_*
+do
+echo $PE
+fastx_clipper -Q 33 -l 70  -v -i $PE -o t$PE
+done
+########################################
+4.Trinity assembly
+
+nohup Trinity --seqType fq --max_memory 100G --left xxx_1.fa --right xxx_2.fq --CPU 12 &
+########################################
+5.Basic statistics
+
+transrate --assembly .fasta
+########################################
+6.remove redundancy
+
+
+########################################
+7.Identity ORF
+
+TransDecoder.LongOrfs -t fasta
+TransDecoder.Predict -t fastat
+########################################
+8.格式化数据库
+makeblastdb -in db.fasta -dbtype prot -parse_seqids -out dbname
+#参数说明:
+#-in：待格式化的序列文件
+#-dbtype：数据库类型，prot或nucl
+#-out：数据库名
+
+#蛋白序列比对蛋白数据库（blastp）
+blastp -query seq.fasta -out seq.blast -db dbname -outfmt 6 -evalue 1e-5 -num_descriptions 10 -num_threads 8
+参数说明:
+-query： 输入文件路径及文件名
+-out：输出文件路径及文件名
+-db：格式化了的数据库路径及数据库名
+-outfmt：输出文件格式，总共有12种格式，6是tabular格式对应BLAST的m8格式
+-evalue：设置输出结果的e-value值
+-num_descriptions：tabular格式输出结果的条数
+-num_threads：线程数
+
+#核酸序列比对核酸数据库（blastn）以及核酸序列比对蛋白数据库（blastx）
+blastn -query seq.fasta -out seq.blast -db dbname -outfmt 6 -evalue 1e-5 -num_descriptions 10 -num_threads 8
+nohup blastx -query seq.fasta -out seq.blast -db dbname -outfmt 6 -evalue 1e-5 -num_descriptions 10 -num_threads 8 &
+
+#结果中从左到右每一列的意义分别是：
+ [00] Query id
+ [01] Subject id
+ [02] % identity
+ [03] alignment length
+ [04] mismatches
+ [05] gap openings
+ [06] q. start
+ [07] q. end
+ [08] s. start
+ [09] s. end
+ [10] e-value
+ [11] bit score
+########################################
+10.计算一个fasta文件的gc含量，不包含序列中的gc
+
+grep -v '>' input.fa| perl -ne  '{$count_A=$count_A+($_=~tr/A//);$count_T=$count_T+($_=~tr/T//);$count_G=$count_G+($_=~tr/G//);$count_C=$count_C+($_=~tr/C//);$count_N=$count_N+($_=~tr/N//)};END{print qq{total count is },$count_A+$count_T+$count_G+$count_C+$count_N, qq{\nGC%:},($count_G+$count_C)/($count_A+$count_T+$count_G+$count_C+$cont_N),qq{\n} }'
+########################################
+11.排序fasta基因名：
+
+awk 'BEGIN{i=0 ; FS="," ; OFS=","}{ if(/>/){gsub($1,">"++i,$1);print $0}else{print $0}}' inputfile.fa>outputfile.fa
+########################################
+12.转换格式
+
+samtools view -h abc.bam > abc.sam
+samtools view -b -S abc.sam > abc.bam
+########################################
+13.hista2 比对软件
+
+hisat2-build -p 4 genome.fa genome             #建立索引
+#开始比对
+hisat2 -p 16-x genome -1 .fastq -2 .fastq –S SRR534293.sam    #S 指定输出文件
+########################################
+14.slamon计算表达量软件
+
+salmon index -t transcripts.fasta -i index --type quasi -k 31  #建立索引
+salmon quant -i index  -l A -1 reads_1.fastq -2 reads_2.fastq -o transcript 开始比对计算表达量
+#salmon 接bam文件
+nohup salmon quant -p 6 -t duck.fa -l A -a duodenum_sort.bam -o quants_test &
+########################################
+15.用于fastq格式文件的read数、碱基数、最长的read、最短的read及平均read长度
+
+perl -ne 'BEGIN{$min=1e10;$max=0;}next if ($.%4);chomp;$read_count++;$cur_length=length($_);$total_length+=$cur_length;$min=$min>$cur_length?$cur_length:$min;$max=$max<$cur_length?$cur_length:$max;END{print qq{Totally $read_count reads\nTotally $total_length bases\nMAX length is $max bp\nMIN length is $min bp \nMean length is },$total_length/$read_count,qq{ bp\n}}' input.fq
+########################################
+16.用于fasta格式文件的碱基数目和GC含量的统计
+
+grep -v '>' input.fa| perl -ne  '{$count_A=$count_A+($_=~tr/A//);$count_T=$count_T+($_=~tr/T//);$count_G=$count_G+($_=~tr/G//);$count_C=$count_C+($_=~tr/C//);$count_N=$count_N+($_=~tr/N//)};END{print qq{total count is },$count_A+$count_T+$count_G+$count_C+$count_N, qq{\nGC%:},($count_G+$count_C)/($count_A+$count_T+$count_G+$count_C+$cont_N),qq{\n} }'
+########################################
+17.用于fasta格式文件的read数、碱基数、最长的read、最短的read及平均read长度
+
+perl -ne 'BEGIN{$min=1e10;$max=0;}next if ($.%2);chomp;$read_count++;$cur_length=length($_);$total_length+=$cur_length;$min=$min>$cur_length?$cur_length:$min;$max=$max<$cur_length?$cur_length:$max;END{print qq{Totally $read_count reads\nTotally $total_length bases\nMAX length is $max bp\nMIN length is $min bp \nMean length is },$total_length/$read_count,qq{ bp\n}}' input.fa
+########################################
+18.不比对计算表达量
+
+#build index
+kallisto index duck.fa -i index
+#quant
+nohup kallisto quant -i index -o testis -t 8 /home/Data/data4/duck_transcriptome/map/fastq/testis_1.fastq /home/Data/data4/duck_transcriptome/map/fastq/testis_2.fastq &
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
